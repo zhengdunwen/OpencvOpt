@@ -98,7 +98,7 @@ def findcnts_and_box_point(closed):
 
     return box
 
-
+#把2个DNA分离开
 def Cut_File(DNANum,original_img):
     gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
     blurs_ = Thresh_and_blur_cut(gray)
@@ -122,10 +122,11 @@ def Cut_File(DNANum,original_img):
     for i in contours_sorted:
         rect = cv2.minAreaRect(i)
         #过滤小的轮廓 最多只是取2个区域的数据
-       # print(str(cut_num) + '  宽:' + str(int(rect[1][0])) + '    高:' + str(int(rect[1][1])))
+
         if cut_num < maxNum and (rect[1][0] > 14 and rect[1][1] > 14):
             box.append(np.int0(cv2.boxPoints(rect)))
             cut_num = cut_num + 1
+            #print(str(DNANum) + '  ' + str(cut_num)  + '  宽:' + str(int(rect[1][0])) + '    高:' + str(int(rect[1][1])))
 
 
     # 绘制轮廓
@@ -154,16 +155,93 @@ def Cut_File(DNANum,original_img):
 
         h = y2 - y1
         w = x2 - x1
-        copy_image.append(original_img[y1:y2, x1:x2])
+
+        copy_image.append(ReCheck_Cut_File(original_img[y1:y2, x1:x2]))
+        #copy_image.append(original_img[y1:y2, x1:x2])
         #cv2.rectangle(proimage, (x1, y1), (x1 + w, y1 + h), (153, 153, 0), 1)
         #cv2.imshow('copy_image' + str(i), original_img[y1:y2, x1:x2])
 
     #cv2.imshow('blurs_', blurs_)
     #cv2.imshow('original_img', original_img)
     #cv2.imshow('proimage', proimage)
+
+
     return copy_image
 
 
+#对剪切的文件进行二次检查
+def ReCheck_Cut_File(original_img):
+    gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
+    blurs_ = Thresh_and_blur_cut(gray)
+
+
+    blurs_ = 255 - blurs_
+    # blurs_ = cv2.dilate(blurs_, None, iterations=2)
+
+    # 找到轮廓
+    _, contours, hierarchy = cv2.findContours(blurs_, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours_sorted = sorted(contours, key=cv2.contourArea, reverse=True)#按照大小排序
+    box = []
+    cut_num = 0
+
+
+    maxNum = 1
+
+    for i in contours_sorted:
+        rect = cv2.minAreaRect(i)
+        #过滤小的轮廓 最多只是取2个区域的数据
+
+        if cut_num < maxNum and (rect[1][0] > 14 and rect[1][1] > 14):
+            box.append(np.int0(cv2.boxPoints(rect)))
+            cut_num = cut_num + 1
+            #print(str(cut_num) + '  宽:' + str(int(rect[1][0])) + '    高:' + str(int(rect[1][1])))
+
+
+    # 绘制轮廓
+    #cv2.drawContours(original_img, box, -1, (0, 255, 0), 1)
+    #cv2.imshow(str(time.time()), original_img)
+
+    #ROI的处理
+    dst_mask = np.zeros(original_img.shape[:2], dtype=np.uint8)
+    dst_rect = np.array([box[0]], np.int32)
+    cv2.fillPoly(dst_mask, dst_rect, 255)
+    dst_mask_f = 255 -dst_mask
+
+    #取反向
+    image_f = cv2.add(np.zeros(np.shape(original_img), dtype=np.uint8)+255, original_img, mask=dst_mask_f)
+    image = cv2.add(original_img,image_f)
+
+
+
+
+    for i in box:
+        Xs = [n[0] for n in i]
+        Ys = [n[1] for n in i]
+        x1 = min(Xs)
+        x2 = max(Xs)
+
+        y1 = min(Ys)
+        y2 = max(Ys)
+
+        if x1 < 0:
+            x1 = 0
+        if x2 < 0:
+            x2 = 0
+        if y1 < 0:
+            y1 = 0
+        if y2 < 0:
+            y2 = 0
+
+        h = y2 - y1
+        w = x2 - x1
+        copy_image = image[y1:y2, x1:x2]
+        #cv2.rectangle(proimage, (x1, y1), (x1 + w, y1 + h), (153, 153, 0), 1)
+        #cv2.imshow('copy_image' + str(i), image[y1:y2, x1:x2])
+
+    #cv2.imshow('blurs_', blurs_)
+    #cv2.imshow('original_img', original_img)
+    #cv2.imshow('proimage', proimage)
+    return copy_image
 
 def drawcnts_and_cut(original_img, box):
     # 因为这个函数有极强的破坏性，所有需要在img.copy()上画
@@ -245,7 +323,7 @@ def save_cut_files(img,crop_img_dist,save_path,img_file_name_):
             height, width = img_cut.shape[:2]
             strs = str(boxKey)
 
-            Cross_num = 18  #转换18个角度
+            Cross_num = 1  #转换18个角度
             for c in range(0, Cross_num):
                 degree = c * 360//Cross_num
                 heightNew = int(width * fabs(sin(radians(degree))) + height * fabs(cos(radians(degree))))
@@ -316,29 +394,30 @@ def get_file_list(img_path,save_path):
     return
 
 
+if __name__ == '__main__':
 
-
-'''
-fo = open("C:\\Users\\zdw\\Desktop\\123.txt", "r+")
-print ("文件名为: ", fo.name)
-line = fo.readline()
-while len(line) > 0:
-    line = line[-42:-1]
-    file_analysis('D:\\tensorflow_code\DNA_TEST\\DNA_862\\JPEG-Cut\\',
-                  line,
-                  'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\3110c2e4-beb1-435c-b26f-2663a5dac4dc\\')
+    '''
+    fo = open("C:\\Users\\zdw\\Desktop\\123.txt", "r+")
+    print ("文件名为: ", fo.name)
     line = fo.readline()
-
-
-file_analysis('D:\\tensorflow_code\DNA_TEST\\DNA_862\\JPEG-Cut\\',
-              'dd151bd6-2071-4d4c-b165-e1f79d75a50d.jpeg',
-              'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\3110c2e4-beb1-435c-b26f-2663a5dac4dc\\')
-
-
-
-
-'''
-get_file_list('D:\\tensorflow_code\\DNA_TEST\\DNA_862\\JPEG_Cut_100\\','D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\100_18\\')
-
-cv2.waitKey(20171219)
+    while len(line) > 0:
+        line = line[-42:-1]
+        file_analysis('D:\\tensorflow_code\DNA_TEST\\DNA_862\\JPEG-Cut\\',
+                      line,
+                      'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\3110c2e4-beb1-435c-b26f-2663a5dac4dc\\')
+        line = fo.readline()
+    
+    
+    file_analysis('D:\\tensorflow_code\DNA_TEST\\DNA_862\\JPEG-Cut\\',
+                  'dd151bd6-2071-4d4c-b165-e1f79d75a50d.jpeg',
+                  'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\3110c2e4-beb1-435c-b26f-2663a5dac4dc\\')
+    
+    
+    
+    
+    '''
+    get_file_list('D:\\tensorflow_code\\DNA_TEST\\100_R_Test\\JPEG_Cut_100\\','D:\\tensorflow_code\\DNA_TEST\\100_R_Test\\Cut_100_72Rc\\')
+    #img = cv2.imread(r'D:\tensorflow_code\DNA_TEST\100_R_Test\Cut_100_1\0c3c290f-2140-4585-ba39-45fe29e9fae5+1+0+0.jpg')
+    #ReCheck_Cut_File(img)
+    cv2.waitKey(20171219)
 
