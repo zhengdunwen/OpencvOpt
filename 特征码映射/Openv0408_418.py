@@ -10,6 +10,7 @@ from math import *
 import numpy as np
 import os
 import time
+from PIL import Image
 
 
 def get_image(path):
@@ -48,16 +49,20 @@ def Thresh_and_blur(gradient):
 
 def Thresh_and_blur_cut(gradient):
     blurred = cv2.GaussianBlur(gradient, (3, 3),0)
-    (_, thresh) = cv2.threshold(gradient, 220, 255, cv2.THRESH_BINARY)
+    (_, thresh) = cv2.threshold(gradient, 240, 255, cv2.THRESH_BINARY)
     return thresh
 
 def image_morphology(thresh):
+    h, w = thresh.shape[:2]  # 获取图像的高和宽
+    wKer = int(w / 280)
     # 建立一个椭圆核函数
+
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
     # 执行图像形态学, 细节直接查文档，很简单
     closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 1))
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (wKer, 1))
     closed = cv2.dilate(closed, kernel, iterations=10)
 
     #kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 2))
@@ -67,6 +72,13 @@ def image_morphology(thresh):
 
 
 def findcnts_and_box_point(closed):
+    h, w = closed.shape[:2]  # 获取图像的高和宽
+    #目标最小像素比例
+    minW = 0.01
+    minH = 0.05
+    Hight_even = h // 4
+    Weight_even = w // 7
+
     # 这里opencv3返回的是三个参数
     Imagesss = closed.copy()
     (image, cnts, _hierarchy) = cv2.findContours(Imagesss,
@@ -79,10 +91,44 @@ def findcnts_and_box_point(closed):
     #print(np.size(c))  # 得到该图中总的轮廓数量
     box = []
     # compute the rotated bounding box of the largest contour
+    L1 = 0
+    L2 = 0
+    L3 = 0
+    L4 = 0
+
     for i in c:
         rect = cv2.minAreaRect(i)
         #print('宽:' + str(rect[1][0]) + '    高:' + str(rect[1][1]))
-        if rect[1][0] > 25 and rect[1][1] > 25:
+        if rect[1][0] > int(w*minW) and rect[1][1] > int(h*minH):
+            # 过滤下的框
+            if rect[1][1] < Hight_even / 5 or rect[1][0] < Weight_even / 5:
+                continue
+
+            #上下连接错误的情况
+            if rect[1][1] > Hight_even*1.5:
+                print("上下连接错误")
+                return []
+
+            #计算每一行的数据个数
+            if  rect[0][1] > Hight_even*3:
+                # 如果中心点在全部的中心点之下，应该是就是干扰信号
+                if (rect[0][1] - 3*Hight_even) / 2 > (Hight_even * 2 / 3):
+                    continue
+                L4 =L4+1
+            elif rect[0][1] > Hight_even*2 and rect[0][1] < Hight_even*3:
+                # 如果中心点在全部的中心点之下，应该是就是干扰信号
+                if (rect[0][1] - 2*Hight_even) / 2 > (Hight_even * 2 / 3):
+                    continue
+                L3= L3+1
+            elif rect[0][1] > Hight_even * 1 and rect[0][1] < Hight_even * 2:
+                if (rect[0][1] - 1 * Hight_even) / 2 > (Hight_even * 2 / 3):
+                    continue
+                L2= L2+1
+            elif rect[0][1] < Hight_even:
+                if (rect[0][1]) / 2 > (Hight_even * 2 / 3):
+                    continue
+                L1 = L1+1
+
             box.append( np.int0(cv2.boxPoints(rect)))
 
     '''
@@ -96,10 +142,14 @@ def findcnts_and_box_point(closed):
         nums =nums +1
     '''
 
+    if len(box) < 22 or L1 != 5 or L2 != 7 or L3 != 6 or L4 < 4 or L4 >6 :
+        return []
+
     return box
 
 #把2个DNA分离开
 def Cut_File(DNANum,original_img):
+    h, w = original_img.shape[:2]  # 获取图像的高和宽
     gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
     blurs_ = Thresh_and_blur_cut(gray)
 
@@ -123,7 +173,7 @@ def Cut_File(DNANum,original_img):
         rect = cv2.minAreaRect(i)
         #过滤小的轮廓 最多只是取2个区域的数据
 
-        if cut_num < maxNum and (rect[1][0] > 14 and rect[1][1] > 14):
+        if cut_num < maxNum and (rect[1][0] > w/8 and rect[1][1] > h/8):
             box.append(np.int0(cv2.boxPoints(rect)))
             cut_num = cut_num + 1
             #print(str(DNANum) + '  ' + str(cut_num)  + '  宽:' + str(int(rect[1][0])) + '    高:' + str(int(rect[1][1])))
@@ -144,6 +194,10 @@ def Cut_File(DNANum,original_img):
         y1 = min(Ys)
         y2 = max(Ys)
 
+        # 如果中心点在全部的中心点之下，应该是就是干扰信号
+        if (y2+y1)/2 > (h*2/3):
+            continue
+
         if x1 < 0:
             x1 = 0
         if x2 < 0:
@@ -153,8 +207,10 @@ def Cut_File(DNANum,original_img):
         if y2 < 0:
             y2 = 0
 
-        h = y2 - y1
-        w = x2 - x1
+        #h = y2 - y1
+        #w = x2 - x1
+
+
 
         copy_image.append(ReCheck_Cut_File(original_img[y1:y2, x1:x2]))
         #copy_image.append(original_img[y1:y2, x1:x2])
@@ -171,6 +227,7 @@ def Cut_File(DNANum,original_img):
 
 #对剪切的文件进行二次检查
 def ReCheck_Cut_File(original_img):
+    h, w = original_img.shape[:2]  # 获取图像的高和宽
     gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
     blurs_ = Thresh_and_blur_cut(gray)
 
@@ -191,7 +248,7 @@ def ReCheck_Cut_File(original_img):
         rect = cv2.minAreaRect(i)
         #过滤小的轮廓 最多只是取2个区域的数据
 
-        if cut_num < maxNum and (rect[1][0] > 14 and rect[1][1] > 14):
+        if cut_num < maxNum and (rect[1][0] > w/8 and rect[1][1] > h/8):
             box.append(np.int0(cv2.boxPoints(rect)))
             cut_num = cut_num + 1
             #print(str(cut_num) + '  宽:' + str(int(rect[1][0])) + '    高:' + str(int(rect[1][1])))
@@ -200,6 +257,9 @@ def ReCheck_Cut_File(original_img):
     # 绘制轮廓
     #cv2.drawContours(original_img, box, -1, (0, 255, 0), 1)
     #cv2.imshow(str(time.time()), original_img)
+    if cut_num <= 0:
+        print("no box")
+        return  original_img
 
     #ROI的处理
     dst_mask = np.zeros(original_img.shape[:2], dtype=np.uint8)
@@ -279,6 +339,10 @@ def drawcnts_and_cut(original_img, box):
     Weight_even = w // 7
     box_sort = sorted(xBox, key=lambda xa: (xa[0][0]+(xa[2][0]-xa[0][0])//2)//Weight_even + (xa[1][1] + (xa[0][1] - xa[1][1])//2) // Hight_even * 7, reverse=False)  # sort by age  [x,y]
 
+
+
+
+
     numx = 1
     crop_img_dist ={}
 
@@ -291,6 +355,10 @@ def drawcnts_and_cut(original_img, box):
 
         hight = y2 - y1
         width = x2 - x1
+
+        #过滤下的框
+        if hight < Hight_even/4 or  width < Weight_even/4:
+            continue
 
         if numx <= 24:
             crop_img_dist[numx] = Cut_File(numx,original_img[y1:y1 + hight, x1:x1 + width])
@@ -323,7 +391,7 @@ def save_cut_files(img,crop_img_dist,save_path,img_file_name_):
             height, width = img_cut.shape[:2]
             strs = str(boxKey)
 
-            Cross_num = 1  #转换18个角度
+            Cross_num = 1  #转换角度
             for c in range(0, Cross_num):
                 degree = c * 360//Cross_num
                 heightNew = int(width * fabs(sin(radians(degree))) + height * fabs(cos(radians(degree))))
@@ -343,7 +411,11 @@ def save_cut_files(img,crop_img_dist,save_path,img_file_name_):
                 filenum= filenum+1
             num = num + 1
     if filenum != 23 * 2 * Cross_num:
-        print('list num  ' + str(filenum) + '  Filname:  ' + img_file_name_)
+        print("num faild: " + str(filenum))
+        print(img_file_name_)
+        fo = open("C:\\Users\\zdw\\Desktop\\new.txt", "w")
+        fo.writelines(img_file_name_)
+        fo.close()
 
 
 def file_analysis(img_path,img_file_name_,save_path):
@@ -357,11 +429,18 @@ def file_analysis(img_path,img_file_name_,save_path):
     thresh = Thresh_and_blur(gradient)
     closed = image_morphology(thresh)
     box = findcnts_and_box_point(closed)
-    draw_img, crop_img_dist = drawcnts_and_cut(original_img,box)
+    if len(box) >= 22:
+        draw_img, crop_img_dist = drawcnts_and_cut(original_img,box)
+        cv2.imwrite(save_path + '\\draw_' + img_file_name_, draw_img)
+        save_cut_files(original_img, crop_img_dist, save_path, img_file_name_)
+    else:
+        print(img_file_name_ + " 划分出错:" + str(len(box)))
+        return
 
 
 
     # 暴力一点，把它们都显示出来看看
+
     '''
     cv2.imshow('original_img', original_img)
     cv2.imshow('blurred', blurred)
@@ -370,13 +449,15 @@ def file_analysis(img_path,img_file_name_,save_path):
     cv2.imshow('final', gradient)
     cv2.imshow('thresh', thresh)
     
+  '''
     cv2.imshow('closed', closed)
     cv2.imshow('draw_img', draw_img)
-    '''
 
 
 
-    save_cut_files(original_img,crop_img_dist,save_path,img_file_name_)
+
+
+
 
 
 def get_file_list(img_path,save_path):
@@ -389,14 +470,37 @@ def get_file_list(img_path,save_path):
         for filename in files:
             fn = os.path.splitext(filename)
             if fn[1] == '.jpeg':
+                print(filename)
                 file_analysis(img_path,filename,save_path)
         return
+    return
+
+
+
+def get_file_list_dir(img_path,save_path):
+    if os.path.isfile(img_path):
+        return
+    fs = os.listdir(img_path)
+    bdst = 0
+    for f1 in fs:
+        tmp_path = os.path.join(img_path,f1)
+        if not os.path.isdir(tmp_path):
+            if os.path.splitext(tmp_path)[1] == '.jpeg' or os.path.splitext(tmp_path)[1] == '.jpg':
+                img = Image.open(tmp_path)
+                if (img.size == (1232,912) or tmp_path.find('Karyotype')>0) and bdst == 0:
+                    #print(f1)
+                    file_analysis(img_path + "\\", f1, save_path)
+                    bdst = 1
+        else:
+           # print('文件夹：',tmp_path)
+            get_file_list_dir(tmp_path,save_path)
     return
 
 
 if __name__ == '__main__':
 
     '''
+    #文件导入文件验证
     fo = open("C:\\Users\\zdw\\Desktop\\123.txt", "r+")
     print ("文件名为: ", fo.name)
     line = fo.readline()
@@ -406,18 +510,26 @@ if __name__ == '__main__':
                       line,
                       'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\3110c2e4-beb1-435c-b26f-2663a5dac4dc\\')
         line = fo.readline()
-    
-    
-    file_analysis('D:\\tensorflow_code\DNA_TEST\\DNA_862\\JPEG-Cut\\',
-                  'dd151bd6-2071-4d4c-b165-e1f79d75a50d.jpeg',
-                  'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\3110c2e4-beb1-435c-b26f-2663a5dac4dc\\')
-    
-    
-    
-    
     '''
-    get_file_list('D:\\tensorflow_code\\DNA_TEST\\100_R_Test\\JPEG_Cut_100\\','D:\\tensorflow_code\\DNA_TEST\\100_R_Test\\Cut_100_72Rc\\')
+
+
+    #单个文件验证代码
+    file_analysis(r'D:\DNA_BACK\3000DNA\PB160610004\\',
+                  'PB160610004_1_Karyotype.jpg',
+                  r'D:\DNA_BACK\XTEST\PB160610004_1_Karyotype\\')
+
+
+
+    '''
+    #get_file_list('D:\\tensorflow_code\\DNA_TEST\\DNA_862\\JPEG-Cut\\','D:\\tensorflow_code\\DNA_TEST\\DNA_862\\JPEG_Cut_Fenjie_3\\')
     #img = cv2.imread(r'D:\tensorflow_code\DNA_TEST\100_R_Test\Cut_100_1\0c3c290f-2140-4585-ba39-45fe29e9fae5+1+0+0.jpg')
     #ReCheck_Cut_File(img)
+
+    #文件夹目录验证
+    get_file_list_dir(r'D:\DNA_BACK\3000DNA\\',
+                      r'D:\DNA_BACK\3000_cut7\\')
+
+   '''
+
     cv2.waitKey(20171219)
 

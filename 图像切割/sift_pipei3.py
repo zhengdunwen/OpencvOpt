@@ -11,6 +11,44 @@ import time
 
 MIN_MATCH_COUNT = 4 #必须要4个点，否则无法转换映射关系
 
+def isPointinPolygon(pointList, rangelist):  #[[0,0],[1,1],[0,1],[0,0]] [1,0.8]
+    # 判断是否在外包矩形内，如果不在，直接返回false
+    Xs = []
+    Xs.append(rangelist[0][0][0])
+    Xs.append(rangelist[1][0][0])
+    Xs.append(rangelist[2][0][0])
+    Xs.append(rangelist[3][0][0])
+
+    Ys =[]
+    Ys.append(rangelist[0][0][1])
+    Ys.append(rangelist[1][0][1])
+    Ys.append(rangelist[2][0][1])
+    Ys.append(rangelist[3][0][1])
+
+    x1 = min(Xs)
+    x2 = max(Xs)
+
+    y1 = min(Ys)
+    y2 = max(Ys)
+
+
+
+    inPointNum = 0
+    AllPointNum = 0
+    for pointM in pointList:
+        AllPointNum =AllPointNum+1
+        point = [pointM[0][0],pointM[0][1]]
+        x = point[0]
+        y = point[1]
+        if (x < x1 or x >x2 or y < y1 or y > y2):
+            continue
+        else:
+            inPointNum = inPointNum +1
+
+    per = inPointNum / AllPointNum
+    print('点全中概率：' + str(per))
+    return per
+
 
 
 
@@ -19,6 +57,10 @@ def SIFT(img_Max,img_patch,Max,Min):
 
     img_patch_Y_COVER = cv2.flip(img_patch, 1)  #水平翻转
     img_1_X_COVER = cv2.cvtColor(img_patch_Y_COVER, cv2.COLOR_RGB2GRAY)
+
+    img_patch_CZ_COVER = cv2.flip(img_patch, 0)  #垂直翻转
+    img_1_CZ_COVER = cv2.cvtColor(img_patch_CZ_COVER, cv2.COLOR_RGB2GRAY)
+
     img_1 = cv2.cvtColor(img_patch, cv2.COLOR_RGB2GRAY)
     img_2 = cv2.cvtColor(img_Max, cv2.COLOR_RGB2GRAY)
 
@@ -27,6 +69,7 @@ def SIFT(img_Max,img_patch,Max,Min):
     #sift = cv2.xfeatures2d.SURF_create()
 
     # find the keypoints and descriptors with SIFT
+    kp1_CZ_COVER, des1_CZ_COVER = sift.detectAndCompute(img_1_CZ_COVER, None)
     kp1_X_COVER, des1_X_COVER = sift.detectAndCompute(img_1_X_COVER, None)
     kp1, des1 = sift.detectAndCompute(img_1,None)
     kp2, des2 = sift.detectAndCompute(img_2,None)
@@ -47,6 +90,7 @@ def SIFT(img_Max,img_patch,Max,Min):
     flann = cv2.FlannBasedMatcher(index_params, search_params)
     matches = flann.knnMatch(des1, des2, k=2)
     matches_X_COVER = flann.knnMatch(des1_X_COVER, des2, k=2)
+    matches_CZ_COVER = flann.knnMatch(des1_CZ_COVER, des2, k=2)
     
     '''
 
@@ -62,16 +106,25 @@ def SIFT(img_Max,img_patch,Max,Min):
     for m,n in matches:
         if m.distance < 0.8*n.distance :
             good_.append(m)
-    print("good:" +str(len(good_)))
+    #print("good:" +str(len(good_)))
 
     good_X_COVER = []
     for m,n in matches_X_COVER:
         if m.distance < 0.8*n.distance :
             good_X_COVER.append(m)
-    print("good_X_COVER:" +str(len(good_X_COVER)))
+    #print("good_X_COVER:" +str(len(good_X_COVER)))
 
+    good_CZ_COVER = []
+    for m,n in matches_CZ_COVER:
+        if m.distance < 0.8*n.distance :
+            good_CZ_COVER.append(m)
 
     #比较good的点的比例，高的则适配更好
+    if len(matches_CZ_COVER) > 0:
+        _CZ_Cover_per = float( len(good_CZ_COVER)/len(matches_CZ_COVER))
+    else:
+        _CZ_Cover_per = 0
+
     if len(matches_X_COVER) > 0:
         _X_Cover_per = float( len(good_X_COVER)/len(matches_X_COVER))
     else:
@@ -82,23 +135,27 @@ def SIFT(img_Max,img_patch,Max,Min):
     else:
         _per = 0
 
-
-    if _X_Cover_per > _per:
+    maxPer = max(_X_Cover_per,_CZ_Cover_per,_per)
+    if _X_Cover_per == maxPer:
         good = good_X_COVER.copy()
         src_pts = np.float32([ kp1_X_COVER[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
         dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
-        print("_X_Cover_per:" + str(_X_Cover_per))
-    else:
+
+    elif _per == maxPer:
         good = good_.copy()
         src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
         dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
-        print("_per:" + str(_per))
+    elif _CZ_Cover_per == maxPer:
+        good = good_CZ_COVER.copy()
+        src_pts = np.float32([kp1_CZ_COVER[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+
 
 
 
     dst_pts,src_pts = MeanCheck(dst_pts,src_pts)
     #print(dst_pts)
-    print("good check:" + str(len(dst_pts)))
+    #print("good check:" + str(len(dst_pts)))
 
 
 
@@ -124,18 +181,20 @@ def SIFT(img_Max,img_patch,Max,Min):
         #matchesMask = mask.ravel().tolist()
 #        # 获得原图像的高和宽
         h,w,_ = img_patch.copy().shape
-        print("h:" +str(h)  + "  w:"+str(w) )
+        #print("h:" +str(h)  + "  w:"+str(w) )
 #        # 使用得到的变换矩阵对原图像的四个角进行变换,获得在目标图像上对应的坐标。
         pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
         if H is not None:
           dst = cv2.perspectiveTransform(pts,H)
-          dst, newH_W = boxCheck(dst)
-          if newH_W[0] * newH_W[1] > h * w * Max :
+          dst, newH_W,rcl = boxCheck(dst)
+          if isPointinPolygon(dst_pts,dst) < 0.6:
+              dst = []
+          elif newH_W[0] * newH_W[1] > h * w * Max :
                 dst = []
-                print("面积大于阈值匹配失败",newH_W[0] * newH_W[1],h * w*Max)
-          if newH_W[0] * newH_W[1] < h * w * Min:
+                #print("面积大于阈值匹配失败",newH_W[0] * newH_W[1],h * w*Max)
+          elif newH_W[0] * newH_W[1] < h * w * Min:
                 dst = []
-                print("面积小于阈值匹配失败",newH_W[0] * newH_W[1],h * w*Min)
+                #print("面积小于阈值匹配失败",newH_W[0] * newH_W[1],h * w*Min)
           # 在原图中画出目标所在位置框, cv2.LINE_AA表示闭合框
           else:
             c = (random.randint(1, 255), random.randint(1, 255), random.randint(1, 255))
@@ -144,8 +203,7 @@ def SIFT(img_Max,img_patch,Max,Min):
             dst = []
 
 
-
-    elif len(dst_pts)>=1:
+    elif len(dst_pts)>=MIN_MATCH_COUNT:#调试开启的
         print("小特征点匹配")
         # 获取关键点的坐标
         #src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
@@ -185,12 +243,12 @@ def SIFT(img_Max,img_patch,Max,Min):
         #dst = cv2.perspectiveTransform(pts, a1)
 
         #print(dst.shape)
-        dst,newH_W = boxCheck(a1)
-        '''
-        if newH_W[0] * newH_W[1] > h * w * Max:
-            dst = []
-            print("面积大于阈值匹配失败", newH_W[0] * newH_W[1], h * w * Max)
-        '''
+        dst,newH_W,_ = boxCheck(a1)
+
+        #if newH_W[0] * newH_W[1] > h * w * Max:
+        #    dst = []
+        #    print("面积大于阈值匹配失败", newH_W[0] * newH_W[1], h * w * Max)
+
         if newH_W[0] * newH_W[1] < h * w * Min:
             dst = []
             print("面积小于阈值匹配失败", newH_W[0] * newH_W[1], h * w * Min)
@@ -211,17 +269,16 @@ def SIFT(img_Max,img_patch,Max,Min):
 #    img3 = cv2.drawMatches(img_patch,kp1,img_Max,kp2,good,None,**draw_params)
 #    img3 = cv2.drawMatches(img_patch,kp1,img_Max,kp2,good,None,matchesMask = matchesMask,flags=2)
 
-    good = np.expand_dims(good,1)
 
 
-    img3 = cv2.drawMatchesKnn(img_patch,kp1,img_Max,kp2,good[:20],None, flags=2)
+    #good = np.expand_dims(good,1)
+    #img3 = cv2.drawMatchesKnn(img_patch,kp1,img_Max,kp2,good[:20],None, flags=2)
 
+    #fx = 0.4
+    #fy = 0.4
+    #img3 = cv2.resize(img3, (0, 0), fx=fx, fy=fy, interpolation=cv2.INTER_CUBIC)
 
-    fx = 0.4
-    fy = 0.4
-    img3 = cv2.resize(img3, (0, 0), fx=fx, fy=fy, interpolation=cv2.INTER_CUBIC)
-
-    return img3,dst
+    return None,dst
 
 
 def boxCheck(box):
@@ -253,12 +310,16 @@ def boxCheck(box):
     if y2 < 0:
         y2 = 0
 
+    rcl = [[x1,y2],[x1,y1],[x2,y1],[x2,y2]]
+
     h = y2 - y1
     w = x2 - x1
-    print("new h:" + str(h) + "  w:" + str(w))
-    xBox = np.ndarray(shape=(4,1, 2), dtype=float, buffer=np.array([x2, y1,x1, y1,x1, y2,x2, y2,0]), offset=0, order="C")
+    #print("new h:" + str(h) + "  w:" + str(w))
+    #xBox = np.ndarray(shape=(4,1, 2), dtype=float, buffer=np.array([x2, y1,x1, y1,x1, y2,x2, y2]), offset=0, order="C")
+    a = np.array([x2, y1,x1, y1,x1, y2,x2, y2])
+    xBox = a.reshape(4,1,2)
     HandW = [h,w]
-    return xBox,HandW
+    return xBox,HandW,rcl
 
 
 def MeanCheck(des,src):
@@ -404,7 +465,7 @@ def PingJieTuPian(imgSrc,imgDst,id,idLR):
 
 if __name__ == '__main__':
     #cmp_path()
-
+    '''
     img_src = 'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\gama_img0.jpg'
     img_dst= 'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\gama.jpg'
     img_save= 'D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\xm.jpg'
@@ -412,41 +473,47 @@ if __name__ == '__main__':
 
 
     '''
-    FileList = FS.getFileAndSourc(r'D:\tensorflow_code\DNA_TEST\DNA_862\862_File\test.txt')
-    pathCut = "D:\\tensorflow_code\\DNA_TEST\\862_File_cut\\H"
+    FileList = FS.getFileAndSourc(r'D:\DNA_BACK\3000DNA\fileSrcAndDst_PB160703010.txt')
+    pathCut = r"D:\DNA_BACK\3000_cut9\\"
 
-    fo = open("D:\\Test\\test.txt", "w")
-
+    fo = open(r"D:\DNA_BACK\3000DNA\posInfo.txt", "w")
+    s =0
     for dist_ in FileList:
         path = dist_['path']
         src = dist_['src']
         dst = dist_['dst']
+        strDst =''
+        s = s + 1
+        print(str(s))
+        for WLen in range(1,6):
+            for HLen in range(1,6):
+                for dna_num in range(1, 25):
+                    for num in range(0,2):
+                        fn = os.path.splitext(dst)
+                        if fn[1] == '.jpeg':
+                            strDst = pathCut + dst[0:-5]+'+'+str(dna_num)+'+'+str(num)+'+0.jpg'
+                        elif fn[1] =='.jpg':
+                            strDst = pathCut + dst[0:-4] + '+' + str(dna_num) + '+' + str(num) + '+0.jpg'
+                        if os.path.exists(strDst):
+                            #print(strDst)
+                            strSrc = path +"\\segmentation_"+ str(HLen) + str(WLen) +'_reduce_'+src
+                            print(strSrc)
 
-        for num in range(0,2):
+                            if os.path.exists(strDst) and os.path.exists(strSrc):
+                                img_src = cv2.imread(strSrc)
+                                img_dst = cv2.imread(strDst)
 
-            strDst = pathCut + "\\" + dst[0:-5]+'+2+'+str(num)+'+0.jpg'
-            print(strDst)
-            strSrc = path +"\\"+ src
-            print(strSrc)
-
-            if os.path.exists(strDst) and os.path.exists(strSrc):
-                img_src = cv2.imread(strSrc)
-                img_dst = cv2.imread(strDst)
-
-                result,boxs = SIFT(img_src,img_dst,4,0.6)
-                fx = 0.8
-                fy = 0.8
-                result = cv2.resize(result, (0, 0), fx=fx, fy=fy, interpolation=cv2.INTER_CUBIC)
-                #cv2.imwrite("D:\\Test\\" + dst[0:-5]+'+2+'+str(num)+'+0.jpg',result)
-                fo.writelines( strSrc +"\n" +str(num) + "\n"+ str(boxs)+"\n")
+                                result,boxs = SIFT(img_src,img_dst,4,0.6)
+                                if len(boxs) >0:
+                                    fx = 0.8
+                                    fy = 0.8
+                                    #result = cv2.resize(result, (0, 0), fx=fx, fy=fy, interpolation=cv2.INTER_CUBIC)
+                                    #cv2.imwrite("D:\\DNA_BACK\\PosInfo_reduce_\\" + dst[0:-5]+'+'+str(dna_num)+'+'+str(num)+'+0.jpg',result)
+                                    fo.writelines( strSrc +"\n"+str(dna_num) +"\n"+str(num) + "\n"+ str(boxs)+"\n")
 
 
-    '''
 
 
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    cv2.waitKey(1)
-    cv2.waitKey(1)
-    cv2.waitKey(1)
     cv2.waitKey(1)

@@ -181,7 +181,7 @@ def file_analysis(img_path, img_file_name_, save_path):
     box = findcnts_and_box_point(closed)
     draw_img, crop_img_dist,_imgs = drawcnts_and_cut(original_img, box)
 
-    cv2.imwrite(save_path + '\\' + img_file_name_+'.jpg', _imgs)
+    cv2.imwrite(save_path + '\\reduce_' + img_file_name_, _imgs)
     fxa = 0.4
     fya = 0.4
     '''
@@ -196,33 +196,35 @@ def file_analysis(img_path, img_file_name_, save_path):
     cv2.imshow('thresh', tempimg)
     tempimg = cv2.resize(closed, None, fx=fxa, fy=fya, interpolation=cv2.INTER_CUBIC)
     cv2.imshow('closed', tempimg)
-    '''
+
     tempimg = cv2.resize(draw_img, None, fx=fxa, fy=fya, interpolation=cv2.INTER_CUBIC)
     cv2.imshow('draw_img', tempimg)
 
-
+ '''
 def get_file_list_dir(img_path):
     if os.path.isfile(img_path):
         return
     fs = os.listdir(img_path)
-
+    num = 0
     for f1 in fs:
         tmp_path = os.path.join(img_path,f1)
         if not os.path.isdir(tmp_path):
             if os.path.splitext(tmp_path)[1] == '.jpeg' or os.path.splitext(tmp_path)[1] == '.jpg':
                 img = Image.open(tmp_path)
                 if (img.size == (1600,1200) or tmp_path.find('Enhanced')>0):
-                    print(f1)
+                    #print(f1)
                     file_analysis(img_path + "\\", f1, img_path + "\\")
+                    num = num +1
+                    print(str(num))
         else:
-            print('文件夹：',tmp_path)
+            #print('文件夹：',tmp_path)
             get_file_list_dir(tmp_path)
     return
     
 
 if __name__ == '__main__':
     #file_analysis(r'F:\\PycharmProjects\\tensorflow\\TestFile\\','88142366-159b-41b7-9fc7-1326ae269714.jpeg','')
-    get_file_list_dir(r'D:\tensorflow_code\DNA_TEST\s')
+    get_file_list_dir(r'D:\DNA_BACK\3000DNA')
     cv2.waitKey(20171219)
 
     
