@@ -1,0 +1,17 @@
+import os
+
+
+# 获取该目录下所有文件，存入列表中
+path = r'/home/cyagen/david/darknet/VOC2012/JPEGImages/'
+f = os.listdir(path)
+
+n = 0
+for i in f:
+    # 设置旧文件名（就是路径+文件名）
+    oldname = path + i
+    namelist = f[n].split('.')
+    # 设置新文件名
+    newname = path + namelist[0] + '.jpg'
+
+    os.rename(oldname, newname)
+    n += 1
